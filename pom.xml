@@ -62,6 +62,12 @@
 			<artifactId>spring-boot-starter-test</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<!-- https://mvnrepository.com/artifact/aws.sdk.kotlin/aws-core-jvm -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>s3</artifactId>
+			<version>2.26.16</version>
+		</dependency>
 	</dependencies>
 
 	<build>
