@@ -6,8 +6,10 @@ import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.transfer.s3.S3TransferManager;
 
 import java.net.URI;
 
@@ -21,14 +23,21 @@ public class S3Config {
     private String REGION;
 
     @Bean
-    public S3Client s3Client() {
-        return S3Client.builder()
+    public S3AsyncClient s3AsyncClient() {
+        return S3AsyncClient.builder()
                 .endpointOverride(URI.create("https://hb.vkcs.cloud"))
                 .region(Region.of(REGION))
                 .credentialsProvider(StaticCredentialsProvider.create(
                         AwsBasicCredentials.create(ACCESS_KEY, SECRET_KEY)
                 ))
                 .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
+                .build();
+    }
+
+    @Bean
+    public S3TransferManager transferManager(S3AsyncClient s3Client) {
+        return S3TransferManager.builder()
+                .s3Client(s3Client)
                 .build();
     }
 }
