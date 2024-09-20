@@ -11,6 +11,7 @@ import software.amazon.awssdk.transfer.s3.progress.LoggingTransferListener;
 
 
 import java.io.*;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -29,7 +30,7 @@ public class S3Service {
     }
 
 
-    public void uploadFile(String key, File file) { // key = name of file in cloud
+    public void uploadFile(File file, String key) { // key = name of file in cloud
         UploadFileRequest uploadFileRequest = UploadFileRequest.builder()
                 .putObjectRequest(req -> req.bucket(BUCKET_NAME).key(key))
                 .addTransferListener(LoggingTransferListener.create())
@@ -41,11 +42,11 @@ public class S3Service {
     }
 
 
-    public void downloadFile(String key) { // key = name of file in cloud
+    public void downloadFile(Path path, String key) { // key = name of file in cloud
         DownloadFileRequest downloadFileRequest =
                 DownloadFileRequest.builder()
                         .getObjectRequest(req -> req.bucket(BUCKET_NAME).key(key))
-                        .destination(Paths.get("downloaded.txt"))
+                        .destination(path)
                         .addTransferListener(LoggingTransferListener.create())
                         .build();
 
@@ -55,7 +56,7 @@ public class S3Service {
 
     }
 
-    public void deleteFile(String key){
+    public void deleteFile(String key) {
         DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
                 .bucket(BUCKET_NAME)
                 .key(key)
