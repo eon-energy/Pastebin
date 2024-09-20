@@ -18,12 +18,11 @@ public class Paste {
     private Long id;
 
     @Column
-    private String link;
+    private String key;
 
     @Column
     private LocalDate createDate;
 
     @Column
     private LocalDate endDate;
-
 }
