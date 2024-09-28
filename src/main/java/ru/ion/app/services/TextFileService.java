@@ -1,34 +1,44 @@
 package ru.ion.app.services;
 
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ru.ion.app.exception.TextFileException;
 
-import java.io.*;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.*;
 
 @Service
 public class TextFileService {
-    public void writeStringToFile(String text, File file) {
-        try (FileWriter fileWriter = new FileWriter(file);) {
-            fileWriter.write(text);
+    /**
+     * Записывает строковый текст в указанный файл.
+     *
+     * @param text текст для записи.
+     * @param path путь к файлу, в который будет произведена запись.
+     * @throws TextFileException если возникает ошибка при записи в файл.
+     */
+    public void writeStringToFile(String text, Path path) {
+        try {
+            Files.writeString(path, text, StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            throw new TextFileException("Error writing to the file: " + path, e);
         }
     }
 
-    public String readFileToString(File file) {
-        StringBuilder text = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                text.append(line).append("\n");
-            }
+    /**
+     * Считывает содержимое файла в строку.
+     *
+     * @param path путь к файлу для чтения.
+     * @return содержимое файла в виде строки.
+     * @throws TextFileException если возникает ошибка при чтении файла.
+     */
+    public String readFileToString(Path path) {
+        try {
+            return Files.readString(path, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            System.err.println(e.getMessage());
+            throw new TextFileException("Error reading the file: " + path, e);
         }
-        if (!text.isEmpty()) {
-            text.deleteCharAt(text.length() - 1); // Удаляем последний \n
-        }
-        return text.toString();
     }
-
-
 }
