@@ -1,70 +1,112 @@
 package ru.ion.app.services;
 
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.AllArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import ru.ion.app.exception.S3ServiceException;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectResponse;
 import software.amazon.awssdk.transfer.s3.S3TransferManager;
 import software.amazon.awssdk.transfer.s3.model.*;
-import software.amazon.awssdk.transfer.s3.progress.LoggingTransferListener;
 
 
-import java.io.*;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 
 @Service
+@AllArgsConstructor
 public class S3Service {
 
-    private final String BUCKET_NAME = "bin-backed";
+    private final String bucketName = "bin-backed";
     private final S3TransferManager transferManager;
     private final S3AsyncClient s3AsyncClient;
+    private static final Logger logger = LoggerFactory.getLogger(TextFileService.class);
 
-    @Autowired
-    public S3Service(S3TransferManager transferManager, S3AsyncClient s3AsyncClient) {
-        this.transferManager = transferManager;
-        this.s3AsyncClient = s3AsyncClient;
-    }
+    /**
+     * Загружает файл в хранилище S3.
+     *
+     * <p>Метод выполняет асинхронную загрузку указанного файла в S3 с использованием заданного ключа.
+     * После успешной загрузки, если это необходимо, можно выполнить дополнительные действия через {@code CompletableFuture}.
+     *
+     * @param path файл для загрузки.
+     * @param key  уникальный ключ (имя файла) в облачном хранилище S3.
+     * @return {@code CompletableFuture<CompletedFileUpload>} представляющий собой будущий результат завершения операции загрузки.
+     * @throws IllegalArgumentException если {@code file} или {@code key} равны {@code null} или {@code key} пустой.
+     * @throws S3ServiceException если загрузка файла в S3 завершается с ошибкой.
+     */
+    public CompletableFuture<CompletedFileUpload> uploadFile(Path path, String key) {
+        if (path == null || key == null || key.isEmpty()) {
+            throw new IllegalArgumentException("path and key must not be null or empty");
+        }
 
-
-    public void uploadFile(File file, String key) { // key = name of file in cloud
         UploadFileRequest uploadFileRequest = UploadFileRequest.builder()
-                .putObjectRequest(req -> req.bucket(BUCKET_NAME).key(key))
-                .addTransferListener(LoggingTransferListener.create())
-                .source(Paths.get(file.getAbsolutePath()))
+                .putObjectRequest(req -> req.bucket(bucketName).key(key))
+                .source(path)
                 .build();
 
         FileUpload upload = transferManager.uploadFile(uploadFileRequest);
-        upload.completionFuture().join();
+
+        return upload.completionFuture()
+                .exceptionally(ex -> {
+                    throw new S3ServiceException("failed to upload file to S3", ex);
+                });
     }
 
+    /**
+     * Скачивает файл из хранилища S3 и сохраняет его по указанному пути.
+     *
+     * <p>Метод выполняет асинхронную загрузку файла из S3 с использованием заданного ключа и сохраняет
+     * его по указанному пути {@code path}.
+     *
+     * @param path путь на локальной файловой системе, куда будет сохранён скачанный файл.
+     * @param key  уникальный ключ (имя файла) в облачном хранилище S3.
+     * @return {@code CompletableFuture<Void>} представляющий собой будущий результат завершения операции скачивания.
+     * @throws IllegalArgumentException если {@code path} или {@code key} равны {@code null} или {@code key} пустой.
+     * @throws S3ServiceException если скачивание файла из S3 завершается с ошибкой.
+     */
+    public CompletableFuture<CompletedFileDownload> downloadFile(Path path, String key) {
+        if (path == null || key == null || key.isEmpty()) {
+            throw new IllegalArgumentException("path and key must not be null or empty");
+        }
 
-    public void downloadFile(Path path, String key) { // key = name of file in cloud
-        DownloadFileRequest downloadFileRequest =
-                DownloadFileRequest.builder()
-                        .getObjectRequest(req -> req.bucket(BUCKET_NAME).key(key))
-                        .destination(path)
-                        .addTransferListener(LoggingTransferListener.create())
-                        .build();
+        DownloadFileRequest downloadFileRequest = DownloadFileRequest.builder()
+                .getObjectRequest(req -> req.bucket(bucketName).key(key))
+                .destination(path)
+                .build();
 
         FileDownload download = transferManager.downloadFile(downloadFileRequest);
 
-        download.completionFuture().join();
-
+        return download.completionFuture()
+                .exceptionally(ex -> {
+                    throw new S3ServiceException("failed to download file from S3", ex);
+                });
     }
 
-    public void deleteFile(String key) {
+    /**
+     * Удаляет файл из хранилища S3 асинхронно.
+     *
+     * @param key уникальный ключ (имя файла) в облачном хранилище S3.
+     * @return {@code CompletableFuture<Void>} представляющий собой будущий результат завершения операции удаления.
+     * @throws IllegalArgumentException если {@code key} равен {@code null} или пустой строке.
+     * @throws S3ServiceException       если удаление файла в S3 завершается с ошибкой.
+     */
+    public CompletableFuture<DeleteObjectResponse> deleteFile(String key) {
+        if (key == null || key.isEmpty()) {
+            throw new IllegalArgumentException("Ключ не должен быть null или пустым.");
+        }
+
         DeleteObjectRequest deleteObjectRequest = DeleteObjectRequest.builder()
-                .bucket(BUCKET_NAME)
+                .bucket(bucketName)
                 .key(key)
                 .build();
 
-        CompletableFuture<DeleteObjectResponse> future = s3AsyncClient.deleteObject(deleteObjectRequest);
-
-        DeleteObjectResponse response = future.join();
+        return s3AsyncClient.deleteObject(deleteObjectRequest)
+                .exceptionally(ex -> {
+                    throw new S3ServiceException("Не удалось удалить файл из S3", ex);
+                });
     }
+
 }
 
