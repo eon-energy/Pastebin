@@ -1,8 +1,7 @@
 package ru.ion.app.services;
 
 import lombok.RequiredArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.mapstruct.factory.Mappers;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.ion.app.DTO.KeyData;
@@ -10,16 +9,14 @@ import ru.ion.app.DTO.PasteData;
 import ru.ion.app.entitys.Paste;
 import ru.ion.app.exception.PasteServiceException;
 import ru.ion.app.exception.S3ServiceException;
+import ru.ion.app.mapper.PasteMapper;
 import ru.ion.app.repositories.PasteRepository;
-import software.amazon.awssdk.transfer.s3.model.CompletedFileUpload;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
-import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
@@ -29,7 +26,7 @@ public class PasteService {
     private final TextFileService textFileService;
     private final KeyGenerationService keyGenerationService;
     private final PasteRepository pasteRepository;
-    private static final Logger logger = LoggerFactory.getLogger(S3Service.class);
+    private final PasteMapper pasteMapper;
 
     /**
      * Сохраняет данные {@code PasteData} в файл, загружает этот файл в хранилище S3
@@ -54,7 +51,7 @@ public class PasteService {
      * @return {@code KeyData} содержащий сгенерированный уникальный ключ для сохраненного Paste.
      * @throws NoSuchAlgorithmException если возникает ошибка при генерации ключа.
      * @throws IOException              если происходит ошибка при создании или записи во временный файл.
-     * @throws S3ServiceException если удаление файла из S3 завершается с ошибкой.
+     * @throws S3ServiceException       если удаление файла из S3 завершается с ошибкой.
      */
     @Transactional
     public KeyData save(PasteData pasteData) throws NoSuchAlgorithmException, IOException, S3ServiceException {
@@ -62,13 +59,10 @@ public class PasteService {
         Path tempFilePath = Files.createTempFile(generatedKey, ".tmp");
 
         try {
-            Paste paste = mapToPaste(pasteData, generatedKey);
+            Paste paste = pasteMapper.toPaste(pasteData, generatedKey,LocalDate.now());
             textFileService.writeStringToFile(pasteData.getText(), tempFilePath);
-
             s3Service.uploadFile(tempFilePath, generatedKey)
-                    .thenRun(() -> {
-                        pasteRepository.save(paste);
-                    })
+                    .thenRun(() -> pasteRepository.save(paste))
                     .join();
             return new KeyData(generatedKey);
         } finally {
@@ -76,13 +70,6 @@ public class PasteService {
         }
     }
 
-    private Paste mapToPaste(PasteData pasteData, String generatedKey) {
-        Paste paste = new Paste();
-        paste.setCreateDate(LocalDate.now());
-        paste.setEndDate(pasteData.getEndDate());
-        paste.setKey(generatedKey);
-        return paste;
-    }
 
     /**
      * Извлекает {@code PasteData}, связанный с заданным ключом, скачивая соответствующий файл из S3.
@@ -91,7 +78,7 @@ public class PasteService {
      * @return {@code PasteData} содержащий текст и дату окончания.
      * @throws IOException           если происходит ошибка при работе с файловой системой.
      * @throws PasteServiceException если {@code Paste} с указанным ключом не найден или возникает ошибка при скачивании файла.
-     * @throws S3ServiceException если удаление файла из S3 завершается с ошибкой.
+     * @throws S3ServiceException    если удаление файла из S3 завершается с ошибкой.
      */
     public PasteData findByKey(String key) throws IOException, PasteServiceException {
         Path tempFilePath = Files.createTempFile(key, ".tmp");
@@ -102,11 +89,8 @@ public class PasteService {
             s3Service.downloadFile(tempFilePath, key)
                     .join();
 
-            PasteData pasteData = new PasteData();
-            pasteData.setEndDate(paste.getEndDate());
-            pasteData.setText(textFileService.readFileToString(tempFilePath));
 
-            return pasteData;
+            return new PasteData(textFileService.readFileToString(tempFilePath), paste.getEndDate());
         } finally {
             Files.deleteIfExists(tempFilePath);
         }
@@ -124,7 +108,7 @@ public class PasteService {
      *
      * @param key уникальный ключ, используемый для удаления {@code Paste} и соответствующего файла в S3.
      * @throws IllegalArgumentException если {@code key} равен {@code null} или пустой строке.
-     * @throws S3ServiceException если удаление файла из S3 завершается с ошибкой.
+     * @throws S3ServiceException       если удаление файла из S3 завершается с ошибкой.
      */
     @Transactional
     public void delete(String key) {
