@@ -1,8 +1,6 @@
-package ru.ion.app.services;
+package ru.ion.app.services.textFile.impl;
 
 import org.springframework.stereotype.Service;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import ru.ion.app.exception.TextFileException;
 
 import java.io.IOException;
