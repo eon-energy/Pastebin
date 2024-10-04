@@ -1,6 +1,6 @@
 package ru.ion.app.exception;
 
-public class PasteServiceException extends Exception {
+public class PasteServiceException extends RuntimeException {
 
     public PasteServiceException(String message) {
         super(message);
