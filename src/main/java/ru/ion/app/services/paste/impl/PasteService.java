@@ -1,7 +1,8 @@
-package ru.ion.app.services;
+package ru.ion.app.services.paste.impl;
 
 import lombok.RequiredArgsConstructor;
-import org.mapstruct.factory.Mappers;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.ion.app.DTO.KeyData;
@@ -11,22 +12,30 @@ import ru.ion.app.exception.PasteServiceException;
 import ru.ion.app.exception.S3ServiceException;
 import ru.ion.app.mapper.PasteMapper;
 import ru.ion.app.repositories.PasteRepository;
+import ru.ion.app.services.keyGeneration.impl.KeyGenerationService;
+import ru.ion.app.services.s3.impl.S3Service;
+import ru.ion.app.services.textFile.impl.TextFileService;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
 import java.time.LocalDate;
 
 @Service
 @RequiredArgsConstructor
 public class PasteService {
 
+
     private final S3Service s3Service;
     private final TextFileService textFileService;
     private final KeyGenerationService keyGenerationService;
     private final PasteRepository pasteRepository;
     private final PasteMapper pasteMapper;
+    private final RedisTemplate<String, String> redisTemplate;
+    private static final Duration CACHE_TTL = Duration.ofMinutes(15);
+    private static final String ACCESS_COUNT_PREFIX = "access_count:";
 
     /**
      * Сохраняет данные {@code PasteData} в файл, загружает этот файл в хранилище S3
@@ -53,44 +62,87 @@ public class PasteService {
      * @throws IOException              если происходит ошибка при создании или записи во временный файл.
      * @throws S3ServiceException       если удаление файла из S3 завершается с ошибкой.
      */
-    @Transactional
-    public KeyData save(PasteData pasteData) throws NoSuchAlgorithmException, IOException, S3ServiceException {
+
+    public KeyData saveToCloud(PasteData pasteData) throws NoSuchAlgorithmException, IOException {
         String generatedKey = keyGenerationService.generateKey();
         Path tempFilePath = Files.createTempFile(generatedKey, ".tmp");
 
         try {
-            Paste paste = pasteMapper.toPaste(pasteData, generatedKey,LocalDate.now());
+            Paste paste = pasteMapper.toPaste(pasteData, generatedKey, LocalDate.now());
             textFileService.writeStringToFile(pasteData.getText(), tempFilePath);
+            pasteRepository.save(paste);
+
             s3Service.uploadFile(tempFilePath, generatedKey)
-                    .thenRun(() -> pasteRepository.save(paste))
                     .join();
+
             return new KeyData(generatedKey);
         } finally {
             Files.deleteIfExists(tempFilePath);
         }
     }
 
-
     /**
-     * Извлекает {@code PasteData}, связанный с заданным ключом, скачивая соответствующий файл из S3.
+     * Находит данные пасты по заданному ключу.
+     * <p>
+     * Метод выполняет поиск пасты в репозитории по ключу. Если паста найдена, пытается
+     * получить закэшированный текст из Redis. Если текст не найден в кеше, скачивает
+     * его из S3, кэширует при необходимости и возвращает данные пасты.
      *
-     * @param key уникальный ключ, используемый для поиска {@code PasteData}.
-     * @return {@code PasteData} содержащий текст и дату окончания.
-     * @throws IOException           если происходит ошибка при работе с файловой системой.
-     * @throws PasteServiceException если {@code Paste} с указанным ключом не найден или возникает ошибка при скачивании файла.
-     * @throws S3ServiceException    если удаление файла из S3 завершается с ошибкой.
+     * @param key уникальный ключ пасты
+     * @return {@link PasteData} содержащие текст пасты и дату окончания
+     * @throws IOException если возникает ошибка при скачивании или чтении файла
+     * @throws PasteServiceException если паста с заданным ключом не найдена
      */
-    public PasteData findByKey(String key) throws IOException, PasteServiceException {
+    public PasteData findByKey(String key) throws IOException {
+        Paste paste = pasteRepository.findByKey(key)
+                .orElseThrow(() -> new PasteServiceException("Paste with this key not found"));
+
+        String cachedText = redisTemplate.opsForValue().get(key);
+
+        if (cachedText != null) {
+            return new PasteData(cachedText, paste.getEndDate());
+        } else {
+            String text = downloadAndReadText(key);
+            if (shouldCashed(key)) redisTemplate.opsForValue().set(key, text, CACHE_TTL);
+
+            return new PasteData(text, paste.getEndDate());
+        }
+    }
+    /**
+     * Определяет, следует ли кэшировать текст пасты.
+     * <p>
+     * Метод увеличивает счетчик доступа для заданного ключа в Redis. Если количество
+     елей
+     * превышает пороговое значение, возвращает {@code true}, указывая на необходимость кэширования.
+     *
+     * @param key уникальный ключ пасты
+     * @return {@code true}, если количество доступов превышает 10, иначе {@code false}
+     */
+    private boolean shouldCashed(String key) {
+        String accessCountKey = ACCESS_COUNT_PREFIX + key;
+        Long accessCount = redisTemplate.opsForValue().increment(accessCountKey, 1);
+        if (accessCount != null && accessCount == 1)
+            redisTemplate.expire(accessCountKey, Duration.ofMinutes(10));
+
+        return accessCount != null && accessCount > 10;
+    }
+    /**
+     * Скачивает и читает текст пасты из S3.
+     * <p>
+     * Метод создает временный файл, скачивает содержимое из S3 по заданному ключу,
+     * читает содержимое файла в строку и удаляет временный файл.
+     *
+     * @param key уникальный ключ пасты
+     * @return содержимое пасты в виде строки
+     * @throws IOException если возникает ошибка при работе с файловой системой или скачивании файла
+     */
+    private String downloadAndReadText(String key) throws IOException {
         Path tempFilePath = Files.createTempFile(key, ".tmp");
         try {
-            Paste paste = pasteRepository.findByKey(key)
-                    .orElseThrow(() -> new PasteServiceException("Paste with this key not found"));
-
             s3Service.downloadFile(tempFilePath, key)
                     .join();
 
-
-            return new PasteData(textFileService.readFileToString(tempFilePath), paste.getEndDate());
+            return textFileService.readFileToString(tempFilePath);
         } finally {
             Files.deleteIfExists(tempFilePath);
         }
@@ -111,12 +163,18 @@ public class PasteService {
      * @throws S3ServiceException       если удаление файла из S3 завершается с ошибкой.
      */
     @Transactional
-    public void delete(String key) {
+    public void deleteByKey(String key) {
         if (key == null || key.isEmpty()) {
             throw new IllegalArgumentException("key must not be null or empty");
         }
         pasteRepository.deleteByKey(key);
         s3Service.deleteFile(key)
                 .join();
+    }
+
+    @Transactional
+    public void deleteExpiredPaste() {
+        pasteRepository.findByEndDateBefore(LocalDate.now())
+                .forEach(paste -> deleteByKey(paste.getKey()));
     }
 }
