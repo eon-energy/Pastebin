@@ -1,8 +1,6 @@
-package ru.ion.app.services;
+package ru.ion.app.services.s3.impl;
 
 import lombok.AllArgsConstructor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import ru.ion.app.exception.S3ServiceException;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -22,9 +20,9 @@ public class S3Service {
     private final String bucketName = "bin-backed";
     private final S3TransferManager transferManager;
     private final S3AsyncClient s3AsyncClient;
-    private static final Logger logger = LoggerFactory.getLogger(TextFileService.class);
 
     /**
+     *
      * Загружает файл в хранилище S3.
      *
      * <p>Метод выполняет асинхронную загрузку указанного файла в S3 с использованием заданного ключа.
