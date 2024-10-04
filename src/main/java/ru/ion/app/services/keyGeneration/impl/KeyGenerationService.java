@@ -1,4 +1,4 @@
-package ru.ion.app.services;
+package ru.ion.app.services.keyGeneration.impl;
 
 import org.springframework.stereotype.Service;
 
