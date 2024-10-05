@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Просмотр Заметки</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background: linear-gradient(135deg, #ffffff, #e0f7fa);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+    .view-container {
+      background-color: #ffffff;
+      padding: 40px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+      max-width: 700px;
+      width: 100%;
+    }
+    .view-container h1 {
+      margin-bottom: 30px;
+      text-align: center;
+      color: #333333;
+    }
+    .note-section {
+      margin-bottom: 20px;
+    }
+    .note-section strong {
+      color: #555555;
+    }
+    .btn-primary {
+      background-color: #4a90e2;
+      border: none;
+      color: white;
+    }
+    .btn-primary:hover {
+      background-color: #357ab8;
+    }
+    .btn-copy {
+      background-color: #28a745; /* Зеленый цвет */
+      border: none;
+      color: white;
+      transition: background-color 0.3s;
+    }
+    .btn-copy:hover {
+      background-color: #218838;
+    }
+    .note-link {
+      display: none; /* Скрыть ссылку */
+    }
+    .button-row {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+      margin-top: 20px;
+    }
+    @media (max-width: 576px) {
+      .button-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+    }
+    .btn-copy.success {
+      background-color: #28a745; /* Зеленый для успешного копирования */
+    }
+  </style>
+</head>
+<body>
+
+<div class="view-container">
+  <h1>Ваша Заметка</h1>
+  <div class="note-section">
+    <p><strong>Текст:</strong></p>
+    <p th:text="${paste.text}"></p>
+  </div>
+  <div class="note-section">
+    <p><strong>Дата окончания действия:</strong> <span th:text="${paste.endDate}"></span></p>
+  </div>
+
+  <!-- Скрытая ссылка для копирования -->
+  <div class="note-link">
+    <a id="hidden-link" th:href="'http://localhost:8080/paste/' + ${key.key}">
+      http://localhost:8080/paste/<span th:text="${key.key}"></span>
+    </a>
+  </div>
+
+  <div class="button-row">
+    <a href="/paste" class="btn btn-primary">Создать новую заметку</a>
+    <button class="btn btn-copy" id="copy-button" onclick="copyLink()">Скопировать Ссылку</button>
+  </div>
+</div>
+
+<script>
+  function copyLink() {
+    const link = document.getElementById('hidden-link').href;
+    navigator.clipboard.writeText(link).then(() => {
+      const copyButton = document.getElementById('copy-button');
+      copyButton.textContent = 'Скопировано!';
+      copyButton.classList.add('success');
+      // Вернуть исходный вид кнопки после 2 секунд
+      setTimeout(() => {
+        copyButton.textContent = 'Скопировать Ссылку';
+        copyButton.classList.remove('success');
+      }, 2000);
+    }).catch(err => {
+      console.error('Не удалось скопировать ссылку:', err);
+    });
+  }
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+</html>
