@@ -27,14 +27,12 @@ public class ViewController {
     }
 
     @PostMapping("/save")
-    public String savePaste(@Valid @ModelAttribute("pasteData") PasteData paste, Model model, BindingResult result) throws NoSuchAlgorithmException, IOException {
+    public String savePaste(@Valid @ModelAttribute("pasteData") PasteData paste, BindingResult result) throws NoSuchAlgorithmException, IOException {
         if (result.hasErrors()) {
             return "create_paste";
         }
         KeyData key = pasteService.saveToCloud(paste);
-        model.addAttribute("key", key);
-
-        return "view_key";
+        return "redirect:/paste/" + key.getKey();
     }
 
     @GetMapping("/paste/{key}")
